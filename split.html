@@ -189,6 +189,8 @@ function splitMesh(triangles) {
                 }
             }
             
+            matches.sort((x,y)=>(x<y ? -1 : (x>y ? 1 : 0)));
+            
             var m;
             if (matches.length == 0) {
                 m = {points:{}, triangles:[]};
@@ -198,6 +200,7 @@ function splitMesh(triangles) {
                 m = meshes[matches[0]];
                 for (var j = matches.length - 1 ; j >= 1 ; j--) {
                     mm = meshes[matches[j]];
+                    console.log(mm);
                     for (var key in mm.points) {
                         if (mm.points.hasOwnProperty(key))
                             m.points[key] = true;
@@ -284,8 +287,14 @@ function downloadBlob(name,blob) {
         }, 1600);
     };
     link.click();
-    link.remove();
-    document.body.removeChild(link);
+    try {
+        link.remove();
+    }
+    catch(err) {}  
+    try {
+        document.body.removeChild(link);
+    }
+    catch(err) {}
 }
 
 function makeMeshByteArray(triangles) {
