@@ -173,6 +173,7 @@ function splitMesh(triangles) {
     
     function process() {
         var i = splitMeshIndex;
+        var t0 = Date.now();
     
         document.getElementById('progress').innerHTML = "Splitting "+(i/triangles.length*100).toFixed(1)+'% done ('+(meshes.length)+' parts found)';
 
@@ -211,7 +212,7 @@ function splitMesh(triangles) {
             }
             m.triangles.push(t);
             
-            if (i && i % 5000 == 0) {
+            if (Date.now() >= t0 + 500) {
                 setTimeout(process, 0);
                 splitMeshIndex = i+1;
                 return;
