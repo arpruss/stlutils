@@ -36,9 +36,12 @@ function getString(view, position, length) {
 
 function getVector(view, position) {
     if (ASCII_MODE) {
-        x = view.getUint32(position, true);
-        y = view.getUint32(position+4, true);
-        z = view.getUint32(position+8, true);
+        function fixZero(a) {
+            return a == 0x80000000 ? 0 : a;
+        }
+        x = fixZero(view.getUint32(position, true));
+        y = fixZero(view.getUint32(position+4, true));
+        z = fixZero(view.getUint32(position+8, true));
         return x.toString(16)+":"+y.toString(16)+":"+z.toString(16);
     }
 
