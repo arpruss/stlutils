@@ -236,6 +236,7 @@ function splitMesh(triangles) {
 
 function downloadBlob(name,blob) {
     var link = document.createElement('a');
+    document.body.appendChild(link);
     link.download = name;
     link.href = window.URL.createObjectURL(blob);
     link.onclick = function(e) {
@@ -245,6 +246,7 @@ function downloadBlob(name,blob) {
     };
     link.click();
     link.remove();
+    document.body.removeChild(link);
 }
 
 function makeMeshByteArray(triangles) {
