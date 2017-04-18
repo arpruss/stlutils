@@ -180,14 +180,15 @@ function splitMesh(triangles) {
         for (; i<triangles.length; i++) {
             var t = triangles[i];
             var matches = [];
-            for (var j = 0 ; j < meshes.length; j++) {
-                for (var k = 0 ; k < 3 ; k++) {
-                    if (t[k] in meshes[j].points) {
-                        matches.push(j);
-                        break;
+            
+            for (var j = 0 ; j < 3 ; j++) {
+                for (var k = 0 ; k < meshes.length; k++) {
+                    if (matches.indexOf(k) == -1 && t[j] in meshes[k].points) {
+                        matches.push(k);
                     }
                 }
             }
+            
             var m;
             if (matches.length == 0) {
                 m = {points:{}, triangles:[]};
@@ -261,7 +262,7 @@ function splitMesh(triangles) {
             
             for (var i=0; i<meshes.length; i++) {
                 allSplitMeshes.push(meshes[i].triangles);
-                message("<a href='#' onclick='downloadMesh("+i+");'>Download mesh part "+i+"</a> "+describeBounds(meshes[i].bounds));
+                message("<a href='#' onclick='downloadMesh("+i+");'>Download mesh part "+(i+1)+"</a> "+describeBounds(meshes[i].bounds));
             }
         }
 
@@ -302,7 +303,7 @@ function makeMeshByteArray(triangles) {
 }
 
 function downloadMesh(i) {
-    downloadBlob(baseFilename+i+".stl", new Blob([makeMeshByteArray(allSplitMeshes[i])], {type: "application/octet-stream"}));
+    downloadBlob(baseFilename+"-"+(i+1)+".stl", new Blob([makeMeshByteArray(allSplitMeshes[i])], {type: "application/octet-stream"}));
 }
 
 function describeBounds(bounds) {
