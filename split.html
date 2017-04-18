@@ -1,0 +1,272 @@
+<html>
+<body>
+<input type="file" id="file" name="file" />
+<ul id="console">
+</ul>
+
+
+<script>
+
+var TRIANGLE_SIZE = (3+3*3)*4+2;
+var ASCII_MODE = true;
+var allSplitMeshes = [];
+var baseFilaname = "";
+
+function getString(view, position, length) {
+    var out = "";
+    
+    for (var i=0; i<length; i++) {
+        var b = view.getUint8(position + i);
+        out += String.fromCharCode(b);
+    }
+    
+    return out;
+}
+
+function getVector(view, position) {
+    if (ASCII_MODE) {
+        x = view.getUint32(position, true);
+        y = view.getUint32(position+4, true);
+        z = view.getUint32(position+8, true);
+        return x.toString(16)+":"+y.toString(16)+":"+z.toString(16);
+    }
+
+    x = view.getFloat32(position, true);
+    y = view.getFloat32(position+4, true);
+    z = view.getFloat32(position+8, true);
+    return [x,y,z]; // x.toString()+","+y.toString()+","+z.toString(); //[x,y,z];
+}
+
+function setVector(view, position, vector) {
+    if (typeof vector === "string") {
+        if (vector.includes(":")) {
+            data = vector.split(":");
+            view.setUint32(position, parseInt(data[0],16), true);
+            view.setUint32(position+4, parseInt(data[1],16), true);
+            view.setUint32(position+8, parseInt(data[2],16), true);
+        }
+        else {
+            data = vector.split(",");
+            view.setFloat32(position, parseFloat(data[0]), true);
+            view.setFloat32(position+4, parseFloat(data[1]), true);
+            view.setFloat32(position+8, parseFloat(data[2]), true);
+        }
+    }
+    else {
+        view.setFloat32(position, vector[0], true);
+        view.setFloat32(position+4, vector[1], true);
+        view.setFloat32(position+8, vector[2], true);
+    }
+}
+
+function getVectorFromText(line, position) {
+    data = line.substr(position).split(/[\s,]+/);
+    if (data.length < 3)
+        throw 'Invalid vector';
+        
+    if (ASCII_MODE) {
+        return data[0]+","+data[1]+","+data[2];
+    }
+
+    return [parseFloat(data[0]), parseFloat(data[1]), parseFloat(data[2])];
+}
+
+function message(text) {
+    document.getElementById('console').innerHTML += '<li>'+text+'</li>';
+}
+
+function getASCIISTL(text) {
+    var triangles = [];
+    
+    var triangle = [];
+    var normal = [0,0,0];
+    
+    var lines = text.split(/[\r\n]+/);
+    
+    message(lines.length+" lines of data");
+    
+    for (var i = 0 ; i < lines.length ; i++ ) {
+        l = lines[i].trim().toLowerCase();
+        if (l == 'endfacet') {
+            if (triangle.length != 3) {
+                throw 'invalid triangle';
+            }
+            triangles.push([triangle[0],triangle[1],triangle[2],normal]);
+            triangle = [];
+            normal = [0,0,0];
+        }
+        else if (l.startsWith('facet')) {
+            if (l.length > 6) {
+                if (l.substr(6).startsWith('normal'))
+                    normal = getVectorFromText(l, 13);
+            }
+        }
+        else if (l.startsWith('vertex')) {
+            if (l.length > 7) 
+                triangle.push(getVectorFromText(l, 7));
+        }
+    }
+    
+    message(String(triangles.length) + " triangles");
+    
+    return triangles;
+}
+
+function getBinarySTL(view) {
+    var triangles = [];
+
+    var numTriangles = view.getUint32(80, true);
+    
+    message(String(numTriangles) + " triangles");
+    
+    for (var i = 0 ; i < numTriangles ; i++) {
+        position = 84 + TRIANGLE_SIZE*i;
+    
+        normal = getVector(view, position);
+        v1 = getVector(view, position+12);
+        v2 = getVector(view, position+12*2);
+        v3 = getVector(view, position+12*3);
+        triangles.push( [v1,v2,v3,normal] );
+    }
+    
+    return triangles;
+}
+
+function splitMesh(triangles) {
+    meshes = [];
+    
+    for (var i = 0; i<triangles.length; i++) {
+        var t = triangles[i];
+        var matches = [];
+        for (var j = 0 ; j < meshes.length; j++) {
+            for (var k = 0 ; k < 3 ; k++) {
+                if (t[k] in meshes[j].points) {
+                    matches.push(j);
+                    break;
+                }
+            }
+        }
+        var m;
+        if (matches.length == 0) {
+            m = {points:{}, triangles:[]};
+            meshes.push(m);
+        }
+        else {
+            m = meshes[matches[0]];
+            for (var j = matches.length - 1 ; j >= 1 ; j--) {
+                mm = meshes[matches[j]];
+                for (var key in mm.points) {
+                    if (mm.points.hasOwnProperty(key))
+                        m.points[key] = true;
+                }
+                for (var k = 0 ; k < mm.triangles.length; k++) {
+                    m.triangles.push(mm.triangles[k]);
+                }
+                meshes.splice(matches[j], 1);
+            }
+        }
+        for (var k = 0 ; k < 3 ; k++) {
+            m.points[t[k]] = true;
+        }
+        m.triangles.push(t);
+    }
+    
+    out = [];
+    
+    for (var i = 0 ; i < meshes.length ; i++) {
+        out.push(meshes[i].triangles);
+    }
+    
+    return out;
+}
+
+function downloadBlob(name,blob) {
+    var link = document.createElement('a');
+    link.download = name;
+    link.href = window.URL.createObjectURL(blob);
+    link.onclick = function(e) {
+        setTimeout(function() {
+            window.URL.revokeObjectURL(link.href);
+        }, 1600);
+    };
+    link.click();
+    link.remove();
+}
+
+function makeMeshByteArray(triangles) {
+    data = new ArrayBuffer(84 + triangles.length * TRIANGLE_SIZE);
+    view = new DataView(data);
+    view.setUint32(80, triangles.length, true);
+    for (var i=0; i<triangles.length; i++) {
+        var offset = 84 + i*TRIANGLE_SIZE;
+        setVector(view, offset, triangles[i][3]); // normal
+        setVector(view, offset+12, triangles[i][0]); // v1
+        setVector(view, offset+12*2, triangles[i][1]); // v2
+        setVector(view, offset+12*3, triangles[i][2]); // v3
+    }
+    return view.buffer;
+}
+
+function downloadMesh(i) {
+    downloadBlob(baseFilename+i+".stl", new Blob([makeMeshByteArray(allSplitMeshes[i])], {type: "application/octet-stream"}));
+}
+
+function processSTL(data) {
+    length = data.byteLength;
+    view = new DataView(data);
+    
+    var header = getString(view, 0, 5);
+    
+    var binary = true;
+    var text;
+    
+    if (header == "solid") {
+        // probably ASCII
+        text = getString(view, 0, length);
+        if (text.includes("endfacet")) {
+            binary = false;
+        }
+    }
+    
+    message(binary ? "binary STL" : "ASCII STL");
+    triangles = binary ? getBinarySTL(view) : getASCIISTL(text);
+    message("data successfully read");    
+    splitMeshes = splitMesh(triangles);
+    if (splitMeshes.length == 1) {
+        message("No splitting done: Only one mesh in file.");
+    }
+    else if (splitMeshes.length == 0) {
+        message("No mesh found in file.");
+    }
+    else {
+        message(String(splitMeshes.length)+" meshes extracted");
+        allSplitMeshes = splitMeshes;
+        for (var i=0; i<splitMeshes.length; i++) {
+            message("<a href='#' onclick='downloadMesh("+i+");'>Download mesh part "+i+"</a>");
+        }
+    }
+}
+
+function handleFileSelect(evt) {
+    var e = document.getElementById('file');
+    e.parentNode.removeChild(e);
+
+    var f = evt.target.files[0];
+    
+    message( escape(f.name) );
+    message( String(f.size) + ' bytes');
+    
+    var n = f.name.split(/[/\\]+/);
+    baseFilename = f.name.replace(/.*[/\\]/, "").replace(/\.[sS][tT][lL]$/, "");
+
+    var reader = new FileReader();
+    reader.onload = function(event) {
+        processSTL(event.target.result);
+    }
+    reader.readAsArrayBuffer(f);
+}
+
+document.getElementById('file').addEventListener('change', handleFileSelect, false);
+</script>
+</body>
+</html>
