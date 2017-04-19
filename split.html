@@ -188,7 +188,6 @@ function meshSelection(meshes) {
 function downloadMeshCombo() {
     list = [];
     for (var i=0; i<allSplitMeshes.length; i++) {
-        console.log(document.getElementById('mesh'+i));
         if (document.getElementById('mesh'+i).checked)
             list.push(i);
     }
