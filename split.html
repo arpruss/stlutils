@@ -22,6 +22,8 @@ var TRIANGLE_SIZE = (3+3*3)*4+2;
 var ASCII_MODE = true;
 var allSplitMeshes = [];
 var baseFilaname = "";
+var splitMeshIndex;
+var meshes;
 
 function getString(view, position, length) {
     var out = "";
@@ -166,8 +168,34 @@ function getBinarySTL(view) {
     return triangles;
 }
 
-var splitMeshIndex;
-var meshes;
+function meshSelection(meshes) {
+    message(String(meshes.length)+" meshes extracted");
+
+    out = "<p>Download individual part meshes or combine them with checkmarks:<br/>";
+    
+    allSplitMeshes = [];
+    
+    for (var i=0; i<meshes.length; i++) {
+        allSplitMeshes.push(meshes[i].triangles);
+        out += "<input type='checkbox' id='mesh"+i+"'/><a href='#' onclick='downloadMesh(["+i+"]);'>mesh part "+(i+1)+"</a> "+describeBounds(meshes[i].bounds)+"<br/>";
+    }
+    
+    out += "<button onclick='downloadMeshCombo();'>Download combination</button></p>";
+    
+    document.getElementById('progress').innerHTML = out;
+}
+
+function downloadMeshCombo() {
+    list = [];
+    for (var i=0; i<allSplitMeshes.length; i++) {
+        console.log(document.getElementById('mesh'+i));
+        if (document.getElementById('mesh'+i).checked)
+            list.push(i);
+    }
+    if (list.length == 0)
+        return;
+    downloadMesh(list);
+}
 
 function splitMesh(triangles) {
     meshes = [];
@@ -202,7 +230,6 @@ function splitMesh(triangles) {
                 m = meshes[matches[0]];
                 for (var j = matches.length - 1 ; j >= 1 ; j--) {
                     mm = meshes[matches[j]];
-                    console.log(mm);
                     for (var key in mm.points) {
                         if (mm.points.hasOwnProperty(key))
                             m.points[key] = true;
@@ -255,6 +282,9 @@ function splitMesh(triangles) {
         
         meshes.sort(compareByBounds);
 
+        document.getElementById('progress').innerHTML = '';
+        document.getElementById('file').disabled = false;
+
         if (meshes.length == 1) {
             message("No splitting done: Only one mesh in file.");
         }
@@ -262,17 +292,10 @@ function splitMesh(triangles) {
             message("No mesh found in file.");
         }
         else {
-            message(String(meshes.length)+" meshes extracted");
-            allSplitMeshes = [];
-            
-            for (var i=0; i<meshes.length; i++) {
-                allSplitMeshes.push(meshes[i].triangles);
-                message("<a href='#' onclick='downloadMesh("+i+");'>Download mesh part "+(i+1)+"</a> "+describeBounds(meshes[i].bounds));
-            }
+            meshSelection(meshes);
         }
 
-        document.getElementById('progress').innerHTML = '';
-        document.getElementById('file').disabled = false;
+        meshes = [];
     }
     
     process();
@@ -299,22 +322,39 @@ function downloadBlob(name,blob) {
     catch(err) {}
 }
 
-function makeMeshByteArray(triangles) {
-    data = new ArrayBuffer(84 + triangles.length * TRIANGLE_SIZE);
-    view = new DataView(data);
-    view.setUint32(80, triangles.length, true);
-    for (var i=0; i<triangles.length; i++) {
-        var offset = 84 + i*TRIANGLE_SIZE;
-        setVector(view, offset, triangles[i][3]); // normal
-        setVector(view, offset+12, triangles[i][0]); // v1
-        setVector(view, offset+12*2, triangles[i][1]); // v2
-        setVector(view, offset+12*3, triangles[i][2]); // v3
+function makeMeshByteArray(triangleLists) {
+    var totalTriangles = 0;
+    
+    for (var i=0; i<triangleLists.length; i++)
+        totalTriangles += triangleLists[i].length;
+        
+    var data = new ArrayBuffer(84 + totalTriangles * TRIANGLE_SIZE);
+    var view = new DataView(data);
+    view.setUint32(80, totalTriangles, true);
+    var offset = 84;
+    for (var i=0; i<triangleLists.length; i++) {
+        var triangles = triangleLists[i];
+        for (var j=0; j<triangles.length; j++) {
+            setVector(view, offset, triangles[j][3]); // normal
+            setVector(view, offset+12, triangles[j][0]); // v1
+            setVector(view, offset+12*2, triangles[j][1]); // v2
+            setVector(view, offset+12*3, triangles[j][2]); // v3
+            offset += TRIANGLE_SIZE;
+        }
     }
     return view.buffer;
 }
 
-function downloadMesh(i) {
-    downloadBlob(baseFilename+"-"+(i+1)+".stl", new Blob([makeMeshByteArray(allSplitMeshes[i])], {type: "application/octet-stream"}));
+function downloadMesh(list) {
+    if (list.length == 0)
+        return;
+    var name = baseFilename;
+    var toMake = [];
+    for (var i=0; i<list.length; i++) {
+        name += "-" + (list[i]+1);
+        toMake.push(allSplitMeshes[list[i]]);
+    }
+    downloadBlob(name+".stl", new Blob([makeMeshByteArray(toMake)], {type: "application/octet-stream"}));
 }
 
 function describeBounds(bounds) {
@@ -346,8 +386,11 @@ function processSTL(data) {
 }
 
 function handleFileSelect(evt) {
+    var e = document.getElementById('progress').innerHTML = '';
     var e = document.getElementById('file');
     e.disabled = true;
+    allSplitMeshes = [];
+    meshes = [];
     document.getElementById('console').innerHTML = '';
 
     var f = evt.target.files[0];
